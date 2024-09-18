@@ -1,4 +1,5 @@
 import os
+import shutil
 import mssqlscripter.main as scripter
 
 
@@ -8,21 +9,34 @@ class migration:
 
         self.git_user = git_user
         self.base_dir = base_dir
-        self.home_dir = fr'{base_dir}\{source_server}.{source_db} - {home_repo.replace(r'/', '-')}.{home_branch} - {target_repo.replace(r'/', '-')}.{target_branch}'
         self.home_server = home_server
         self.home_db = home_db
         self.home_repo = home_repo
         self.home_branch = home_branch
 
-        if not os.path.isdir(fr"{self.home_dir}\migrations"):
-            os.makedirs(fr"{self.home_dir}\migrations")
-            
 
     def spawn_from_db(self, source_server, source_db):
         # prod_db -> dev_db
 
         self.source_server = source_server
         self.source_db = source_db
+        self.description = fr"[{self.source_server}].[{self.source_db}] → [{self.home_server}].[{self.home_db}]"
+        self.home_dir = fr'{self.base_dir}\{self.description}'
+        self.staging_dir = fr"{self.base_dir}\.stg\{self.description.replace(' → ',' __U+2192__ ')}"
+
+        if os.path.isdir(self.staging_dir):
+            print(fr"Deleting [{self.staging_dir}]")
+            shutil.rmtree(self.staging_dir)
+                                               
+
+        print(fr"Trying to connect to {self.source_server}...")
+        scripter.main([
+            '--connection-string', fr"Server={self.source_server};Database={self.source_db};Trusted_Connection=yes;",
+            '-f', self.staging_dir ,
+            '--file-per-object',
+            '--display-progress'
+        ])
+
 
         if os.path.isdir(self.home_dir):
             for item in os.listdir(self.home_dir):
@@ -30,16 +44,17 @@ class migration:
                     print(fr"Deleting [{item}]")
                     os.remove(fr"{self.home_dir}\{item}")
 
-        print(fr"Trying to connect to {self.source_server}...")
-        scripter.main([
-            '--connection-string', fr"Server={self.source_server};Database={self.source_db};Trusted_Connection=yes;",
-            '-f', self.home_dir,
-            '--file-per-object',
-            '--display-progress'
-        ])
+    
+        shutil.move(self.staging_dir, self.home_dir)
+
+
+        if not os.path.isdir(fr"{self.home_dir}\migrations"):
+            os.makedirs(fr"{self.home_dir}\migrations")
 
         #TODO: modify scripts
         #TODO: run scripts
+
+
 
     #TODO: commit_to_branch(self, target_repo, target_branch)
         #TODO: upload to home branch
@@ -70,6 +85,7 @@ if __name__.endswith('__main__'):
     #    target_repo = r'GrupoSelecionar/databases',
     #    target_branch = r'CICD Testing - Prod',
     #)
+
 
 
 
