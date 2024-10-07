@@ -108,30 +108,23 @@ class migration():
             if os.path.isdir(db_stg_dir):
                 shutil.rmtree(db_stg_dir)
 
-    def to_db(self, targets: list[str], overwrite:bool = False):
+    def migration_to_db(self, target_server:str, target_migrations: list[str]):
         """
         Runs a list of migrations against the chosen server."
         """
-        #TODO: This functions doesn't yet do what is says it does.
-        #TODO: Split into migration_to_db() and schema_to_db() as they would work in fundamentally different ways.
+        #TODO: Allow for inferred selection (i.e.:"run this migration and all that came after it")
 
-        for target in targets:
-            target_server, target_db    = target.strip("[").strip("]").split("].[")
+        for target in target_migrations:
             self.sql_conn_str           = fr"Driver={{{[x for x in pyodbc.drivers() if x.endswith('SQL Server')][0]}}}; Server={target_server};Database=master;Trusted_Connection=yes;"
             self.sql_conn_url           = sql.engine.URL.create("mssql+pyodbc", query={"odbc_connect": self.sql_conn_str})        
             self.sql_engine             = sql.create_engine(self.sql_conn_url, connect_args = {"autocommit":True})
 
             print(fr"Trying to connect to {target_server}...")
 
-            with open(f"{self.base_dir}\\migrations\\{self.current_migration}.sql", "r", encoding="utf-8") as f:
+            with open(f"{self.base_dir}\\migrations\\{target}.sql", "r", encoding="utf-8") as f:
                 batches = re.split(r"(?<=)GO\n", f.read())[:-1]
             
             with self.sql_engine.connect() as connection:
-                print(fr"Preparing to execute migration scripts...")
-                if overwrite:
-                    print(fr"Dropping [{target_db}] if it already exists...")
-                    _ = connection.execute(sql.text(fr"DROP DATABASE IF EXISTS [{target_db}];"))
-
                 print(fr"Executing {len(batches)} batches...")
                 for i, batch in enumerate(batches):
                     try:
@@ -140,6 +133,41 @@ class migration():
                     except Exception as exc:
                         print(fr"Failed on batch {i+1}/{len(batches)}!")
                         print(exc)
+
+
+    def schema_to_db(self, target_addresses: list[str], overwrite:bool = False):
+        """
+        Runs a list of schema creations scripts against the chosen server."
+        """
+        #TODO: Follow proper creation order based on dependencies.
+
+        for target in target_addresses:
+            target_server, target_db    = target.strip("[").strip("]").split("].[")
+            self.sql_conn_str           = fr"Driver={{{[x for x in pyodbc.drivers() if x.endswith('SQL Server')][0]}}}; Server={target_server};Database=master;Trusted_Connection=yes;"
+            self.sql_conn_url           = sql.engine.URL.create("mssql+pyodbc", query={"odbc_connect": self.sql_conn_str})        
+            self.sql_engine             = sql.create_engine(self.sql_conn_url, connect_args = {"autocommit":True})
+
+            print(fr"Trying to connect to {target_server}...")
+
+            for root, _, files in os.walk(f"{self.base_dir}\\schema\\{target_server}\\{self.current_migration}"):
+                for file in files:
+                    with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                        batches = re.split(r"(?<=)GO\n", f.read())[:-1]
+                    
+                    with self.sql_engine.connect() as connection:
+                        print(fr"Preparing to execute migration scripts...")
+                        if overwrite:
+                            print(fr"Dropping [{target_db}] if it already exists...")
+                            _ = connection.execute(sql.text(fr"DROP DATABASE IF EXISTS [{target_db}];"))
+
+                        print(fr"Executing {len(batches)} batches...")
+                        for i, batch in enumerate(batches):
+                            try:
+                                _ = connection.execute(sql.text(batch))
+                                #print(fr"GO - - - > Batch {i+1}/{len(batches)} OK!")
+                            except Exception as exc:
+                                print(fr"Failed on batch {i+1}/{len(batches)}!")
+                                print(exc)
 
 
     def new_blank(self):
@@ -196,38 +224,47 @@ class migration():
 
 if __name__.endswith("__main__"):
     urllib3.disable_warnings()
+    #TODO: Get the CLI working
 
     base_dir = r"R:\DADOS E BI\Dados\Testes\databases" 
 
-    # get the CLI working
 
     mig = migration(r"chore: sync repo do cliente com repo interno", base_dir)
     #mig.new_blank()
     mig.from_db([
-                 "[003sql001prd].[db_Serasa_producao]",
-                 "[003sql001prd].[db_usuarios]", 
-                 "[003sql001prd].[db_prod_d-1]", 
-                 "[003sql001prd].[db_prod_d0]",
-                 "[003sql001prd].[db_app]"],
+                "[003sql001prd].[db_app]",
+                "[003sql001prd].[db_prod_d0]",
+                "[003sql001prd].[db_prod_d-1]", 
+                "[003sql001prd].[db_usuarios]", 
+                "[003sql001prd].[db_Serasa_producao]",
+                ],
                 generate_creation_migrations=False,             
                 overwrite=True)
     mig.cleanup(target_files=mig.base_dir+"\\schema\\**\\*.sql",
                 regex_remove=r"^(\( NAME = N'| ON  | LOG ON).*",
                 name_swaps  ={
-                    "db_app"            : "db_app_dev",
-                    "db_prod_d0"        : "db_dev_d0",
-                    "db_prod_d-1"       : "db_dev_d-1",
-                    "db_Serasa_producao": "db_Serasa_dev",
-                    "db_producao"       : "db_dev",
-                    "db_usuarios"       : "db_usuarios_dev",
-                    "003sql001prd"      : "003sql001dev"
-                    })
-    #mig.to_db(["[003sql001prd].[db_Serasa_producao]",
-    #           "[003sql001prd].[db_usuarios]", 
-    #           "[003sql001prd].[db_prod_d-1]", 
-    #           "[003sql001prd].[db_prod_d0]",
-    #           "[003sql001prd].[db_app]"],
-    #          overwrite=False)
+                             "003sql001prd"      : "003sql001dev",
+                             "db_app"            : "db_app_dev",
+                             "db_prod_d0"        : "db_dev_d0",
+                             "db_prod_d-1"       : "db_dev_d-1",
+                             "db_usuarios"       : "db_usuarios_dev",
+                             "db_Serasa_producao": "db_Serasa_dev",
+                             "db_producao"       : "db_dev",
+                             })
+    mig.schema_to_db([
+                    "[003sql001dev].[db_app_dev]",
+                    "[003sql001dev].[db_dev_d0]",
+                    "[003sql001dev].[db_dev_d-1]", 
+                    "[003sql001dev].[db_usuarios]", 
+                    "[003sql001dev].[db_Serasa_dev]",
+                    ],
+                    overwrite=False)
+    mig.migration_to_db("[003sql001dev]",
+                        [
+                        "20241001123018-feat-espelhar-views-do-banco-legado-no-banco-de-usuarios", 
+                        "20241002120041-fix-corrigir-problema-de-permissionamento-do-setor-de-planejamento-nas-atualizacoes-do-mop",
+                        ])
+
 
 
 
