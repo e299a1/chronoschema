@@ -1,2 +1,5 @@
 chronoschema.egg-info/
 __pycache__/
+build/
+dist/
+.pypirc
