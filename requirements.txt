@@ -1,0 +1,4 @@
+mssql_scripter==1.0.0a23
+pyodbc==5.1.0
+SQLAlchemy==2.0.35
+click==8.1.7
