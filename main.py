@@ -8,7 +8,9 @@ import mssqlscripter.main as scripter
 from glob import glob
 from datetime import datetime
 import unicodedata
+import click
 
+urllib3.disable_warnings()
 
 def slugify(value:str, allow_unicode:bool=False):
     """
@@ -26,7 +28,15 @@ def slugify(value:str, allow_unicode:bool=False):
     value = re.sub(r'[^\w\s-]', '', value.lower())
     return re.sub(r'[-\s]+', '-', value).strip('-_')
 
+@click.group()
+def cli():
+    pass
 
+@cli.command()
+@click.option('-s', '--sources', type=list[str], help='List of source adresses in a [server].[database] format.', default=[])
+@click.option('-g', '--generate_creation_migrations', type=bool, help='If a database creation script sould be created in the migrations folder.', default=False)
+@click.option('-o', '--overwrite', type=bool, help='If existing schema scripts should be replaced by the newly generated ones', default=False)
+@click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations should reside. Current working dir by default.', default='')
 def from_db(sources: list[str], generate_creation_migrations:bool=False, overwrite:bool=False, base_dir:str=""):
     """
     Generates the database schema for each of the "[server].[database]" items passed to the function.
@@ -98,6 +108,10 @@ def from_db(sources: list[str], generate_creation_migrations:bool=False, overwri
             shutil.rmtree(db_stg_dir)
 
 
+@cli.command()
+@click.option('-s', '--target_server', type=str, help='Server where the scripts should be executed.', default='')
+@click.option('-m', '--target_migrations', type=list[str], help='List of migrations that will be executed.', default=[])
+@click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
 def migration_to_db(target_server:str, target_migrations: list[str], base_dir:str=""):
     """
     Runs a list of migrations against the chosen server."
@@ -128,6 +142,10 @@ def migration_to_db(target_server:str, target_migrations: list[str], base_dir:st
                     print(exc)
 
 
+@cli.command()
+@click.option('-a', '--target_addresses', type=str, help='Server where the scripts should be executed.', default='')
+@click.option('-o', '--overwrite', type=bool, help='If existing databases should be dropped before running the creation scripts. Risky and not recommended at all.', default=False)
+@click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
 def schema_to_db(target_addresses: list[str], overwrite:bool = False, base_dir:str=""):
     """
     Runs a list of schema creations scripts against the chosen server."
@@ -166,6 +184,9 @@ def schema_to_db(target_addresses: list[str], overwrite:bool = False, base_dir:s
                             print(exc)
 
 
+@cli.command()
+@click.option('-n', '--name', type=str, help='Migration name/short description. Will be slugified.', default='')
+@click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
 def new_blank(name:str, base_dir:str=""):
     """
     Generates a blank .sql migration script following the proper filename formating.
@@ -180,6 +201,12 @@ def new_blank(name:str, base_dir:str=""):
         _ = file.write(fr"-- {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - {name}" )
     
 
+@cli.command()
+@click.option('-f', '--target_files', type=str, help='Glob path indicating which files should be affected.', default='')
+@click.option('-s', '--name_swaps', type=dict[str, str], help='Dictionary of words to be replaced.', default={})
+@click.option('-sf', '--swap_filenames', type=bool, help='If filenames should be affected by --name_swaps.', default=True)
+@click.option('-re', '--remove_empty_dirs', type=bool, help='If empty directories should be removed.', default=True)
+@click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
 def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_filenames:bool=True, remove_empty_dirs:bool=True, base_dir:str=""):
     """
     General cleanup utility function.
@@ -231,55 +258,4 @@ def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_
             if not any(files) and not still_has_subdirs:
                 os.rmdir(current_dir)
                 deleted.add(current_dir)
-
-
-
-
-if __name__.endswith("__main__"):
-    urllib3.disable_warnings()
-    #TODO: Get the CLI working
-    
-
-    new_blank(r"chore: sync repo do cliente com repo interno", r"R:\DADOS E BI\Dados\Testes\databases")
-    from_db([
-            #"[003sql001prd].[db_app]",
-            #"[003sql001prd].[db_prod_d0]",
-            #"[003sql001prd].[db_prod_d-1]", 
-            "[003sql001prd].[db_usuarios]", 
-            #"[003sql001prd].[db_Serasa_producao]",
-            ],
-            generate_creation_migrations=False,             
-            overwrite=True,
-            base_dir = r"R:\DADOS E BI\Dados\Testes\databases")
-    cleanup(target_files="**\\*.sql",
-            regex_remove=r"^(\( NAME = N'| ON  | LOG ON).*",
-            name_swaps={
-                       #"003sql001prd"      : "003sql001dev",
-                       "003sql001dev"      : "003sql001prd",
-                       #"db_app"            : "db_app_dev",
-                       #"db_prod_d0"        : "db_dev_d0",
-                       #"db_prod_d-1"       : "db_dev_d-1",
-                       "db_usuarios"       : "db_usuarios_dev",
-                       #"db_Serasa_producao": "db_Serasa_dev",
-                       #"db_producao"       : "db_dev",
-                       },
-            base_dir=r"R:\DADOS E BI\Dados\Testes\databases")
-    schema_to_db([
-                #"[003sql001dev].[db_app_dev]",
-                #"[003sql001dev].[db_dev_d0]",
-                #"[003sql001dev].[db_dev_d-1]", 
-                "[003sql001dev].[db_usuarios]", 
-                #"[003sql001dev].[db_Serasa_dev]",
-                ],
-                overwrite=False,
-                base_dir=r"R:\DADOS E BI\Dados\Testes\databases")
-    migration_to_db("003sql001prd",
-                    [
-                    "20241001123018-feat-espelhar-views-do-banco-legado-no-banco-de-usuarios", 
-                    "20241002120041-fix-corrigir-problema-de-permissionamento-do-setor-de-planejamento-nas-atualizacoes-do-mop",
-                    ],
-                    base_dir=r"R:\DADOS E BI\Dados\Testes\databases")
-
-
-
 
