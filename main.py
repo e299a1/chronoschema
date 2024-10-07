@@ -26,7 +26,7 @@ def slugify(value:str, allow_unicode:bool=False):
     value = re.sub(r'[^\w\s-]', '', value.lower())
     return re.sub(r'[-\s]+', '-', value).strip('-_')
 
-class migration:
+class migration():
     def __init__ (self, name:str, base_dir:str):
         self.name:str = name
         self.base_dir:str = base_dir
@@ -37,6 +37,12 @@ class migration:
         self.sql_engine:sql.Engine
 
     def from_db(self, sources: list[str], generate_creation_migrations:bool=False, overwrite:bool = False):
+        """
+        Generates the database schema for each of the "[server].[database]" items passed to the function.
+        Optionally also generates the inital database creation script in the migrations folder.
+        """
+        #TODO: Add a creation order marker to filenames, as it's relevant to the execution order when spawning DBs from the scripted schemas.
+
         for source in sources:
             source_server, source_db    = source.strip("[").strip("]").split("].[")
             self.sql_conn_str           = fr"Driver={{{[x for x in pyodbc.drivers() if x.endswith('SQL Server')][0]}}}; Server={source_server};Database=master;Trusted_Connection=yes;"
@@ -103,6 +109,12 @@ class migration:
                 shutil.rmtree(db_stg_dir)
 
     def to_db(self, targets: list[str], overwrite:bool = False):
+        """
+        Runs a list of migrations against the chosen server."
+        """
+        #TODO: This functions doesn't yet do what is says it does.
+        #TODO: Split into migration_to_db() and schema_to_db() as they would work in fundamentally different ways.
+
         for target in targets:
             target_server, target_db    = target.strip("[").strip("]").split("].[")
             self.sql_conn_str           = fr"Driver={{{[x for x in pyodbc.drivers() if x.endswith('SQL Server')][0]}}}; Server={target_server};Database=master;Trusted_Connection=yes;"
@@ -131,6 +143,9 @@ class migration:
 
 
     def new_blank(self):
+        """
+        Generates a blank .sql migration script following the proper filename formating.
+        """
         if not os.path.isdir(fr"{self.base_dir}\\migrations"):
             os.makedirs(fr"{self.base_dir}\\migrations")
         with open(fr"{self.base_dir}\\migrations\\{self.current_migration}.sql", "w") as file:
@@ -138,6 +153,11 @@ class migration:
         
 
     def cleanup(self, target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_filenames:bool=True, remove_empty_dirs:bool=True):
+        """
+        General cleanup utility function.
+        Makes sure the entire folder (schemas and migrations) follow the desired encoding, object names, and no empty unused directories.
+        Also allows for easy object renaming/remapping.
+        """
         print(fr"Cleaning up {target_files}...")
         for file in glob(target_files, recursive=True):
             #print(fr"Cleaning up {file}...")
