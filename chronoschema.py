@@ -33,7 +33,7 @@ def cli():
     pass
 
 @cli.command()
-@click.option('-s', '--sources', type=list[str], help='List of source adresses in a [server].[database] format.', default=[])
+@click.option('-s', '--sources', type=str, help='List of source adresses in a [server].[database] format.', multiple=True)
 @click.option('-g', '--generate_creation_migrations', type=bool, help='If a database creation script sould be created in the migrations folder.', default=False)
 @click.option('-o', '--overwrite', type=bool, help='If existing schema scripts should be replaced by the newly generated ones', default=False)
 @click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations should reside. Current working dir by default.', default='')
@@ -44,6 +44,8 @@ def from_db(sources: list[str], generate_creation_migrations:bool=False, overwri
     """
     #TODO: Add a file creation order marker to filenames, as it's relevant to the execution order when spawning DBs from the scripted schemas.
     #TODO: Make it so the creation order marks are base os file contents and proper dependency tracking.
+
+    sources = list(sources)
     
     if not base_dir:
         base_dir = os.getcwd()
@@ -143,7 +145,7 @@ def migration_to_db(target_server:str, target_migrations: list[str], base_dir:st
 
 
 @cli.command()
-@click.option('-a', '--target_addresses', type=str, help='Server where the scripts should be executed.', default='')
+@click.option('-a', '--target_addresses', type=str, help='Server where the scripts should be executed.', multiple=True)
 @click.option('-o', '--overwrite', type=bool, help='If existing databases should be dropped before running the creation scripts. Risky and not recommended at all.', default=False)
 @click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
 def schema_to_db(target_addresses: list[str], overwrite:bool = False, base_dir:str=""):
@@ -203,16 +205,21 @@ def new_blank(name:str, base_dir:str=""):
 
 @cli.command()
 @click.option('-f', '--target_files', type=str, help='Glob path indicating which files should be affected.', default='')
-@click.option('-s', '--name_swaps', type=dict[str, str], help='Dictionary of words to be replaced.', default={})
-@click.option('-sf', '--swap_filenames', type=bool, help='If filenames should be affected by --name_swaps.', default=True)
-@click.option('-re', '--remove_empty_dirs', type=bool, help='If empty directories should be removed.', default=True)
+@click.option('-s', '--name_swaps', type=(str, str), help='Dictionary of words to be replaced.', multiple=True)
+@click.option('-rr','--regex_remove', type=str, help='Remove contents based on regex match.', default='')
+@click.option('-sf','--swap_filenames', type=bool, help='If filenames should be affected by --name_swaps.', default=True)
+@click.option('-re','--remove_empty_dirs', type=bool, help='If empty directories should be removed.', default=True)
+@click.option('-o', '--overwrite', type=bool, help='If a file is renamed to the path of an exisiting file, it will be deleted.', default=False)
 @click.option('-d', '--base_dir', type=str, help='Directory where the schema and migrations reside. Current working dir by default.', default='')
-def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_filenames:bool=True, remove_empty_dirs:bool=True, base_dir:str=""):
+def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_filenames:bool=True, remove_empty_dirs:bool=True, base_dir:str="", overwrite:bool=False):
     """
     General cleanup utility function.
     Makes sure the entire folder (schemas and migrations) follow the desired encoding, object names, and no empty unused directories.
     Also allows for easy object renaming/remapping.
     """
+
+    target_files = target_files.strip("\\")
+    name_swaps = dict(name_swaps)
 
     if not base_dir:
         base_dir = os.getcwd()
@@ -225,7 +232,7 @@ def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_
     for i, file in enumerate(files):
         newfile = file
         try:
-            with open(file, "r", encoding="utf-8-sig") as f:
+            with open(file, "r", encoding="utf-8") as f:
                 text = f.read()
         except Exception as exc:
             print(fr"Got error while cleaning up file {i}/{len(files)} at {file}...")
@@ -245,6 +252,8 @@ def cleanup(target_files:str, name_swaps:dict[str, str], regex_remove:str, swap_
             newfile_dir = newfile.rsplit('\\', 1)[0]
             if not os.path.isdir(newfile_dir):
                 os.makedirs(newfile_dir)
+            if overwrite and os.path.isfile(newfile):
+                os.remove(newfile)
             os.rename(file, newfile)
 
     if remove_empty_dirs:
